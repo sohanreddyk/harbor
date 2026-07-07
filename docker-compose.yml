@@ -1,0 +1,67 @@
+name: harbor
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-harbor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harbor}
+      POSTGRES_DB: ${POSTGRES_DB:-harbor}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-harbor} -d ${POSTGRES_DB:-harbor}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Present from Week 1 so the spine is ready; first used for semantic cache
+  # and Lua rate limiting in Week 2.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build: ./gateway
+    environment:
+      GATEWAY_PORT: "8080"
+      PROVIDER: ${PROVIDER:-mock}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PRIMARY_MODEL: ${PRIMARY_MODEL:-gpt-4o-mini}
+    ports:
+      - "8080:8080"
+
+  refapp:
+    build: ./refapp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-harbor}:${POSTGRES_PASSWORD:-harbor}@postgres:5432/${POSTGRES_DB:-harbor}
+      GATEWAY_URL: http://gateway:8080
+      PRIMARY_MODEL: ${PRIMARY_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+      TOP_K: ${TOP_K:-4}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot-reload source in dev without rebuilding the image.
+      - ./refapp/app:/app/app
+      - ./refapp/scripts:/app/scripts
+      - ./refapp/data:/app/data
+      # Persist the downloaded embedding model across restarts.
+      - models:/models
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  pgdata:
+  models:

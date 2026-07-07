@@ -1,0 +1,23 @@
+[project]
+name = "harbor-refapp"
+version = "0.1.0"
+description = "Harbor reference RAG application (data-plane client + control-plane host)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "sqlmodel>=0.0.21",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3.2",
+    "fastembed>=0.3.6",
+    "pydantic-settings>=2.4",
+    "numpy>=1.26",
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
