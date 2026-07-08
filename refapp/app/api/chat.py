@@ -83,12 +83,14 @@ async def chat(req: ChatRequest, session: Session = Depends(get_session)):
                 ]
             },
         )
+        meta: dict = {}
         try:
-            async for delta in stream_chat(messages, settings.primary_model, harbor):
+            async for delta in stream_chat(messages, settings.primary_model, harbor, meta_out=meta):
                 yield _sse("token", {"content": delta})
         except Exception as exc:  # noqa: BLE001
             yield _sse("error", {"message": f"gateway error: {exc}"})
             return
+        yield _sse("meta", meta)
         yield _sse("done", {})
 
     return StreamingResponse(

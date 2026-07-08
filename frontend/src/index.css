@@ -2,6 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---- Theme tokens ---- */
+/* Dark is the default (night harbor). data-theme="light" flips the palette. */
+:root {
+  --harbor-ink: #0a1416;
+  --harbor-surface: #0f1e21;
+  --harbor-surface2: #13272b;
+  --harbor-line: #1d3a3f;
+  --harbor-fg: #e7f0ed;
+  --harbor-muted: #7f9c99;
+  --harbor-beacon: #f0a94a;
+  --harbor-patina: #54c8ad;
+  --harbor-coral: #e56b7a;
+}
+
+:root[data-theme="light"] {
+  /* Daytime chart-paper: cool sea-mist, not cream. Ink stays teal. */
+  --harbor-ink: #eef2f1;
+  --harbor-surface: #ffffff;
+  --harbor-surface2: #eef3f2;
+  --harbor-line: #cfdad7;
+  --harbor-fg: #123230;
+  --harbor-muted: #5f7a76;
+  --harbor-beacon: #b56410;
+  --harbor-patina: #1f9e86;
+  --harbor-coral: #cf4c5e;
+}
+
 html,
 body,
 #root {
@@ -10,6 +37,90 @@ body,
 }
 
 body {
-  background-color: #0b1120;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-color: var(--harbor-ink);
+  color: var(--harbor-fg);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+::selection {
+  background: rgba(240, 169, 74, 0.28);
+}
+
+/* Instrument-thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--harbor-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--harbor-line);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Depth-sounding tick rule — a nautical chart scale used as a divider */
+.tick-rule {
+  height: 1px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--harbor-line) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+/* Status LED */
+.led {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  display: inline-block;
+  flex: none;
+}
+.led-live {
+  background: var(--harbor-beacon);
+  animation: beacon 2.6s ease-out infinite;
+}
+
+@keyframes beacon {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 169, 74, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(240, 169, 74, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 169, 74, 0);
+  }
+}
+
+@keyframes surfacein {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.surface-in {
+  animation: surfacein 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led-live,
+  .surface-in {
+    animation: none;
+  }
+  body {
+    transition: none;
+  }
 }

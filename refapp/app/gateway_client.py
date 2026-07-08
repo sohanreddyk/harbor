@@ -11,12 +11,17 @@ async def stream_chat(
     messages: list[dict],
     model: str,
     harbor: dict | None = None,
+    meta_out: dict | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas from the gateway's streaming chat endpoint.
 
     `harbor` carries cache hints (query embedding, context hash, prompt version)
     so the gateway can key its semantic cache without re-embedding. These fields
     are consumed by the gateway and never forwarded to the upstream provider.
+
+    If `meta_out` is provided, it is populated with the gateway's X-Harbor-*
+    response headers (cache status, route tier, provider) once the response
+    opens, so callers can surface them to the UI.
     """
     payload: dict = {"model": model, "messages": messages, "stream": True}
     if harbor:
@@ -27,6 +32,16 @@ async def stream_chat(
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, json=payload) as resp:
             resp.raise_for_status()
+            if meta_out is not None:
+                h = resp.headers
+                meta_out.update({
+                    "cache": h.get("X-Harbor-Cache"),
+                    "route": h.get("X-Harbor-Route"),
+                    "provider": h.get("X-Harbor-Provider"),
+                    "similarity": h.get("X-Harbor-Cache-Similarity"),
+                    "fallback": h.get("X-Harbor-Fallback"),
+                    "degraded": h.get("X-Harbor-Degraded"),
+                })
             async for line in resp.aiter_lines():
                 line = line.strip()
                 if not line or not line.startswith("data:"):
