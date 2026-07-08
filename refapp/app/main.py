@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, func, select
+from sqlalchemy import func
+from sqlmodel import Session, select
 
 from app.api.chat import router as chat_router
 from app.config import settings

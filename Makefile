@@ -1,7 +1,7 @@
 # Harbor — Makefile
 # Docker-first local development. `make up` then `make ingest` then `make fe`.
 
-.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers fe gateway-test health stats fmt clean rebuild
+.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers eval-seed eval-run eval-run-bad eval-list fe gateway-test health stats fmt clean rebuild
 
 help:
 	@echo "Harbor targets:"
@@ -13,6 +13,10 @@ help:
 	@echo "  make cache-stats - show gateway semantic cache stats"
 	@echo "  make reset-cache - flush Redis + restart gateway (cold cache for a clean bench)"
 	@echo "  make providers   - show provider fallback chain + circuit-breaker state"
+	@echo "  make eval-seed   - seed the golden evaluation dataset"
+	@echo "  make eval-run    - run the eval suite (baseline prompt v1)"
+	@echo "  make eval-run-bad- run the eval suite with a degraded prompt (v2-nocontext)"
+	@echo "  make eval-list   - list recent eval runs"
 	@echo "  make stats       - show corpus document/chunk counts"
 	@echo "  make health      - hit gateway + refapp health endpoints"
 	@echo "  make gateway-test- send a raw streaming request to the gateway"
@@ -49,6 +53,18 @@ reset-cache:
 
 providers:
 	@curl -s localhost:8080/v1/providers | (python3 -m json.tool 2>/dev/null || cat)
+
+eval-seed:
+	docker compose exec refapp python -m app.eval.cli seed
+
+eval-run:
+	docker compose exec refapp python -m app.eval.cli run --suite k8s-basics --prompt-version v1
+
+eval-run-bad:
+	docker compose exec refapp python -m app.eval.cli run --suite k8s-basics --prompt-version v2-nocontext
+
+eval-list:
+	docker compose exec refapp python -m app.eval.cli list
 
 stats:
 	@curl -s localhost:8000/api/corpus/stats | (python3 -m json.tool 2>/dev/null || cat)
