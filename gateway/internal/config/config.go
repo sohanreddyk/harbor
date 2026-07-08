@@ -45,6 +45,9 @@ type Config struct {
 	PrimaryFaultRate float64
 	BreakerThreshold int
 	BreakerCooldown  time.Duration
+
+	// Price used for estimated cost / cost-saved metrics.
+	CostPer1kTokens float64
 }
 
 func FromEnv() Config {
@@ -70,6 +73,7 @@ func FromEnv() Config {
 		PrimaryFaultRate:    getenvFloat("PRIMARY_FAULT_RATE", 0),
 		BreakerThreshold:    getenvInt("BREAKER_THRESHOLD", 5),
 		BreakerCooldown:     time.Duration(getenvInt("BREAKER_COOLDOWN_SECONDS", 15)) * time.Second,
+		CostPer1kTokens:     getenvFloat("COST_PER_1K_TOKENS", 0.15),
 	}
 }
 

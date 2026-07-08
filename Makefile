@@ -1,7 +1,7 @@
 # Harbor — Makefile
 # Docker-first local development. `make up` then `make ingest` then `make fe`.
 
-.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers eval-seed eval-run eval-run-bad eval-list eval-compare eval-snapshot eval-gate eval-gate-bad fe gateway-test health stats fmt clean rebuild
+.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers metrics grafana eval-seed eval-run eval-run-bad eval-list eval-compare eval-snapshot eval-gate eval-gate-bad fe gateway-test health stats fmt clean rebuild
 
 help:
 	@echo "Harbor targets:"
@@ -13,6 +13,8 @@ help:
 	@echo "  make cache-stats - show gateway semantic cache stats"
 	@echo "  make reset-cache - flush Redis + restart gateway (cold cache for a clean bench)"
 	@echo "  make providers   - show provider fallback chain + circuit-breaker state"
+	@echo "  make metrics     - show Harbor Prometheus metrics from the gateway"
+	@echo "  make grafana     - print Grafana + Prometheus URLs"
 	@echo "  make eval-seed   - seed the golden evaluation dataset"
 	@echo "  make eval-run    - run the eval suite (baseline prompt v1)"
 	@echo "  make eval-run-bad- run the eval suite with a degraded prompt (v2-nocontext)"
@@ -57,6 +59,14 @@ reset-cache:
 
 providers:
 	@curl -s localhost:8080/v1/providers | (python3 -m json.tool 2>/dev/null || cat)
+
+metrics:
+	@curl -s localhost:8080/metrics | grep '^harbor_' | head -40
+
+grafana:
+	@echo "Grafana dashboard : http://localhost:3000/dashboards  (anonymous admin, no login)"
+	@echo "Prometheus        : http://localhost:9090"
+	@echo "Gateway metrics   : http://localhost:8080/metrics"
 
 eval-seed:
 	docker compose exec refapp python -m app.eval.cli seed

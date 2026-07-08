@@ -55,6 +55,7 @@ services:
       PRIMARY_FAULT_RATE: ${PRIMARY_FAULT_RATE:-0}
       BREAKER_THRESHOLD: ${BREAKER_THRESHOLD:-5}
       BREAKER_COOLDOWN_SECONDS: ${BREAKER_COOLDOWN_SECONDS:-15}
+      COST_PER_1K_TOKENS: ${COST_PER_1K_TOKENS:-0.15}
     ports:
       - "8080:8080"
 
@@ -81,6 +82,30 @@ services:
       # Persist the downloaded embedding model across restarts.
       - models:/models
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - gateway
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:

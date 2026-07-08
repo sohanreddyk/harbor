@@ -68,6 +68,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			clientID = "global"
 		}
 		if !s.limiter.Allow(r.Context(), clientID, time.Now().UnixMilli()) {
+			s.metrics.RateLimited.Inc()
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 			return
@@ -119,7 +120,8 @@ func (s *Server) serveHit(w http.ResponseWriter, req *provider.ChatRequest, e *c
 	id := "chatcmpl-" + randID()
 	created := time.Now().Unix()
 	start := time.Now()
-	for _, tok := range tokenizeReplay(e.Response) {
+	toks := tokenizeReplay(e.Response)
+	for _, tok := range toks {
 		_ = sse(w, flusher, deltaChunk(id, created, req.Model, tok))
 		if s.cfg.CacheReplayPacing > 0 {
 			time.Sleep(s.cfg.CacheReplayPacing)
@@ -128,6 +130,9 @@ func (s *Server) serveHit(w http.ResponseWriter, req *provider.ChatRequest, e *c
 	_ = sse(w, flusher, finalChunk(id, created, req.Model, "stop"))
 	fmt.Fprint(w, "data: [DONE]\n\n")
 	flusher.Flush()
+	s.metrics.ObserveChat("hit", tier, "cache", false, time.Since(start),
+		promptTokens(req), len(toks), s.cfg.CostPer1kTokens)
+	s.syncGauges()
 	s.log.Info("chat completed", "cache", "hit", "similarity", sim,
 		"model", req.Model, "route", tier, "latency_ms", time.Since(start).Milliseconds())
 }
@@ -145,6 +150,7 @@ func (s *Server) serveMiss(ctx context.Context, w http.ResponseWriter, req *prov
 	created := time.Now().Unix()
 	start := time.Now()
 	var full strings.Builder
+	compTokens := 0
 	headersWritten := false
 
 	onFirst := func(providerName string, fallback bool) {
@@ -160,6 +166,7 @@ func (s *Server) serveMiss(ctx context.Context, w http.ResponseWriter, req *prov
 	}
 	onDelta := func(delta string) error {
 		full.WriteString(delta)
+		compTokens++
 		return sse(w, flusher, deltaChunk(id, created, req.Model, delta))
 	}
 
@@ -168,6 +175,9 @@ func (s *Server) serveMiss(ctx context.Context, w http.ResponseWriter, req *prov
 	// No provider produced any output -> graceful degraded response.
 	if !headersWritten {
 		s.serveDegraded(w, flusher, req, tier, id, created, err)
+		s.metrics.ObserveChat("miss", tier, "degraded", false, time.Since(start),
+			promptTokens(req), 0, s.cfg.CostPer1kTokens)
+		s.syncGauges()
 		return
 	}
 
@@ -189,6 +199,9 @@ func (s *Server) serveMiss(ctx context.Context, w http.ResponseWriter, req *prov
 		}
 		s.cache.Store(context.Background(), entry)
 	}
+	s.metrics.ObserveChat("miss", tier, result.Provider, result.Fallback, time.Since(start),
+		promptTokens(req), compTokens, s.cfg.CostPer1kTokens)
+	s.syncGauges()
 	s.log.Info("chat completed", "cache", "miss", "provider", result.Provider,
 		"fallback", result.Fallback, "route", tier, "model", req.Model,
 		"latency_ms", time.Since(start).Milliseconds())
@@ -234,6 +247,14 @@ func finalChunk(id string, created int64, model, finish string) streamChunk {
 		ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
 		Choices: []chunkChoice{{Index: 0, Delta: map[string]any{}, FinishReason: &finish}},
 	}
+}
+
+func promptTokens(req *provider.ChatRequest) int {
+	total := 0
+	for _, m := range req.Messages {
+		total += len(m.Content)
+	}
+	return total / 4
 }
 
 func messageParts(req *provider.ChatRequest) []string {

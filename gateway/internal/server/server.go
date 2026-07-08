@@ -9,6 +9,7 @@ import (
 	"github.com/sohanreddy/harbor/gateway/internal/cache"
 	"github.com/sohanreddy/harbor/gateway/internal/config"
 	"github.com/sohanreddy/harbor/gateway/internal/dispatch"
+	"github.com/sohanreddy/harbor/gateway/internal/metrics"
 	"github.com/sohanreddy/harbor/gateway/internal/ratelimit"
 	"github.com/sohanreddy/harbor/gateway/internal/router"
 )
@@ -20,12 +21,13 @@ type Server struct {
 	router  *router.Router
 	cache   *cache.Cache
 	limiter *ratelimit.Limiter
+	metrics *metrics.Metrics
 	log     *slog.Logger
 }
 
 func New(cfg config.Config, chain *dispatch.Chain, rtr *router.Router,
-	c *cache.Cache, l *ratelimit.Limiter, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, chain: chain, router: rtr, cache: c, limiter: l, log: log}
+	c *cache.Cache, l *ratelimit.Limiter, m *metrics.Metrics, log *slog.Logger) *Server {
+	return &Server{cfg: cfg, chain: chain, router: rtr, cache: c, limiter: l, metrics: m, log: log}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -34,7 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/cache/stats", s.handleCacheStats)
 	mux.HandleFunc("GET /v1/providers", s.handleProviders)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	mux.Handle("GET /metrics", s.metrics.Handler())
 	return s.withLogging(mux)
 }
 
@@ -57,10 +59,17 @@ func (s *Server) handleProviders(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// handleMetrics is a placeholder until Prometheus wiring in Week 4.
-func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	_, _ = w.Write([]byte("# Harbor gateway metrics land in Week 4\n"))
+// syncGauges refreshes point-in-time gauges (cache size, breaker states) so a
+// Prometheus scrape reflects current state even between requests.
+func (s *Server) syncGauges() {
+	if entries, ok := s.cache.Stats()["entries"].(int); ok {
+		s.metrics.SetCacheEntries(entries)
+	}
+	for _, h := range s.chain.Health() {
+		provider, _ := h["provider"].(string)
+		state, _ := h["breaker"].(string)
+		s.metrics.SetBreaker(provider, state)
+	}
 }
 
 func (s *Server) withLogging(next http.Handler) http.Handler {

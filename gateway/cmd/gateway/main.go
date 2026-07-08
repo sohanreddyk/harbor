@@ -16,6 +16,7 @@ import (
 	"github.com/sohanreddy/harbor/gateway/internal/cache"
 	"github.com/sohanreddy/harbor/gateway/internal/config"
 	"github.com/sohanreddy/harbor/gateway/internal/dispatch"
+	"github.com/sohanreddy/harbor/gateway/internal/metrics"
 	"github.com/sohanreddy/harbor/gateway/internal/provider"
 	"github.com/sohanreddy/harbor/gateway/internal/ratelimit"
 	"github.com/sohanreddy/harbor/gateway/internal/router"
@@ -36,6 +37,7 @@ func main() {
 
 	chain := buildChain(cfg)
 	rtr := router.New(cfg.CheapModel, cfg.StrongModel, cfg.RouteTokenThreshold)
+	m := metrics.New()
 
 	log.Info("starting harbor gateway",
 		"port", cfg.Port, "provider", cfg.Provider, "cache_enabled", cfg.CacheEnabled,
@@ -44,7 +46,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           server.New(cfg, chain, rtr, c, limiter, log).Routes(),
+		Handler:           server.New(cfg, chain, rtr, c, limiter, m, log).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
