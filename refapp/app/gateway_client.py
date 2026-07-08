@@ -7,14 +7,20 @@ import httpx
 from app.config import settings
 
 
-async def stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
+async def stream_chat(
+    messages: list[dict],
+    model: str,
+    harbor: dict | None = None,
+) -> AsyncIterator[str]:
     """Yield content deltas from the gateway's streaming chat endpoint.
 
-    The gateway speaks the OpenAI SSE format (`data: {...}` lines terminated by
-    `data: [DONE]`), so this parser also works against OpenAI directly if the
-    gateway is ever bypassed.
+    `harbor` carries cache hints (query embedding, context hash, prompt version)
+    so the gateway can key its semantic cache without re-embedding. These fields
+    are consumed by the gateway and never forwarded to the upstream provider.
     """
-    payload = {"model": model, "messages": messages, "stream": True}
+    payload: dict = {"model": model, "messages": messages, "stream": True}
+    if harbor:
+        payload["harbor"] = harbor
     url = settings.gateway_url.rstrip("/") + "/v1/chat/completions"
 
     timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)

@@ -19,8 +19,8 @@ type Mock struct {
 	PerTokenDelay time.Duration
 }
 
-func NewMock() *Mock {
-	return &Mock{PerTokenDelay: 12 * time.Millisecond}
+func NewMock(perTokenDelay time.Duration) *Mock {
+	return &Mock{PerTokenDelay: perTokenDelay}
 }
 
 func (m *Mock) Name() string { return "mock" }

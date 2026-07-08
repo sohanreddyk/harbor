@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY pyproject.toml ./
 COPY app ./app
 COPY scripts ./scripts
+COPY bench ./bench
 COPY data ./data
 
 RUN pip install --upgrade pip && pip install .

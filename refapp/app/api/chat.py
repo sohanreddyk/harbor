@@ -1,4 +1,5 @@
 """Reference RAG chat endpoint: retrieve -> prompt -> gateway -> SSE stream."""
+import hashlib
 import json
 from collections.abc import AsyncIterator
 
@@ -10,10 +11,15 @@ from sqlmodel import Session
 
 from app.config import settings
 from app.db import get_session
+from app.embeddings import embed_query
 from app.gateway_client import stream_chat
-from app.retrieval import RetrievedChunk, retrieve
+from app.retrieval import RetrievedChunk, retrieve_with_vector
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+# Bump when SYSTEM_PROMPT changes so cached responses from the old prompt are
+# not served for the new one (the gateway namespaces the cache by this value).
+PROMPT_VERSION = "v1"
 
 SYSTEM_PROMPT = (
     "You are Harbor's documentation assistant. Answer the question using ONLY "
@@ -36,6 +42,17 @@ def _build_messages(question: str, chunks: list[RetrievedChunk]) -> list[dict]:
     ]
 
 
+def _context_hash(chunks: list[RetrievedChunk]) -> str:
+    """Stable hash of the retrieved context.
+
+    If the corpus changes such that different chunks are retrieved, this hash
+    changes and the semantic cache correctly misses instead of serving a stale
+    answer grounded in different sources.
+    """
+    joined = "\n".join(c.content for c in chunks)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
@@ -43,11 +60,20 @@ def _sse(event: str, data: dict) -> str:
 @router.post("/chat")
 async def chat(req: ChatRequest, session: Session = Depends(get_session)):
     k = req.top_k or settings.top_k
-    chunks = await run_in_threadpool(retrieve, session, req.message, k)
+
+    # Embed the query once; reuse for retrieval and the gateway cache key.
+    qvec = await run_in_threadpool(embed_query, req.message)
+    chunks = await run_in_threadpool(retrieve_with_vector, session, qvec, k)
     messages = _build_messages(req.message, chunks)
 
+    harbor = {
+        "embedding": qvec,
+        "context_hash": _context_hash(chunks),
+        "prompt_version": PROMPT_VERSION,
+        "client_id": "refapp",
+    }
+
     async def event_stream() -> AsyncIterator[str]:
-        # 1. Sources first so the UI can render citations immediately.
         yield _sse(
             "sources",
             {
@@ -57,14 +83,12 @@ async def chat(req: ChatRequest, session: Session = Depends(get_session)):
                 ]
             },
         )
-        # 2. Stream tokens as they arrive from the gateway.
         try:
-            async for delta in stream_chat(messages, settings.primary_model):
+            async for delta in stream_chat(messages, settings.primary_model, harbor):
                 yield _sse("token", {"content": delta})
-        except Exception as exc:  # noqa: BLE001 - surface a clean error event
+        except Exception as exc:  # noqa: BLE001
             yield _sse("error", {"message": f"gateway error: {exc}"})
             return
-        # 3. Signal completion.
         yield _sse("done", {})
 
     return StreamingResponse(

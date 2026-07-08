@@ -16,13 +16,12 @@ class RetrievedChunk:
     score: float  # cosine similarity in [-1, 1]; higher is more similar
 
 
-def retrieve(session: Session, query: str, k: int) -> list[RetrievedChunk]:
-    """Return the top-k most similar chunks for a query.
+def retrieve_with_vector(session: Session, qvec: list[float], k: int) -> list[RetrievedChunk]:
+    """Top-k retrieval using a precomputed query embedding.
 
-    pgvector's `<=>` operator (exposed as .cosine_distance) returns cosine
-    distance in [0, 2]; we convert to similarity = 1 - distance for display.
+    Splitting this out lets the caller embed the query once and reuse the
+    vector for both retrieval and the gateway's semantic cache key.
     """
-    qvec = embed_query(query)
     distance = Chunk.embedding.cosine_distance(qvec)  # type: ignore[attr-defined]
 
     stmt = (
@@ -45,3 +44,8 @@ def retrieve(session: Session, query: str, k: int) -> list[RetrievedChunk]:
             )
         )
     return results
+
+
+def retrieve(session: Session, query: str, k: int) -> list[RetrievedChunk]:
+    """Embed the query and return the top-k most similar chunks."""
+    return retrieve_with_vector(session, embed_query(query), k)
