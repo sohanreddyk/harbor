@@ -1,0 +1,3 @@
+# Committed eval baselines live here (e.g. baseline.json), produced by:
+#   make eval-snapshot RUN=<good_run_id>
+# The GitHub Actions eval gate compares each PR's run against this baseline.

@@ -1,0 +1,61 @@
+name: eval-gate
+
+# Runs the Harbor evaluation suite on every PR and fails the check if answer
+# quality regresses (Mann-Whitney U + effect size) versus the committed
+# baseline in eval/baseline.json. Uses the offline mock provider, so no API
+# keys are needed in CI.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      prompt_version:
+        description: "Prompt version to gate (use v2-nocontext to demo a failing gate)"
+        default: "v1"
+
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure a baseline exists
+        run: |
+          test -f eval/baseline.json || {
+            echo "::error::Missing eval/baseline.json. Run 'make eval-snapshot RUN=<good_run_id>' locally and commit it."
+            exit 1
+          }
+
+      - name: Start Harbor stack
+        run: docker compose up -d --build postgres redis gateway refapp
+
+      - name: Wait for refapp
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf localhost:8000/api/health >/dev/null; then echo "refapp healthy"; exit 0; fi
+            sleep 3
+          done
+          echo "refapp did not become healthy"; docker compose logs refapp; exit 1
+
+      - name: Ingest corpus + seed golden dataset
+        run: |
+          docker compose exec -T refapp python scripts/ingest.py
+          docker compose exec -T refapp python -m app.eval.cli seed
+
+      - name: Eval gate (fails on significant regression)
+        run: |
+          docker compose exec -T refapp python -m app.eval.cli gate \
+            --prompt-version "${{ github.event.inputs.prompt_version || 'v1' }}" \
+            --baseline-file /app/eval/baseline.json \
+            --report-out /app/eval/report.txt
+
+      - name: Upload regression report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval/report.txt
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

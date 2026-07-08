@@ -1,7 +1,7 @@
 # Harbor — Makefile
 # Docker-first local development. `make up` then `make ingest` then `make fe`.
 
-.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers eval-seed eval-run eval-run-bad eval-list fe gateway-test health stats fmt clean rebuild
+.PHONY: help up down logs ps ingest bench cache-stats reset-cache providers eval-seed eval-run eval-run-bad eval-list eval-compare eval-snapshot eval-gate eval-gate-bad fe gateway-test health stats fmt clean rebuild
 
 help:
 	@echo "Harbor targets:"
@@ -17,6 +17,10 @@ help:
 	@echo "  make eval-run    - run the eval suite (baseline prompt v1)"
 	@echo "  make eval-run-bad- run the eval suite with a degraded prompt (v2-nocontext)"
 	@echo "  make eval-list   - list recent eval runs"
+	@echo "  make eval-compare CANDIDATE=<id> BASELINE=<id> - regression report between two runs"
+	@echo "  make eval-snapshot RUN=<id>  - write eval/baseline.json from a run"
+	@echo "  make eval-gate   - run v1 and fail if it regresses vs the baseline"
+	@echo "  make eval-gate-bad - run v2-nocontext to demo the gate failing"
 	@echo "  make stats       - show corpus document/chunk counts"
 	@echo "  make health      - hit gateway + refapp health endpoints"
 	@echo "  make gateway-test- send a raw streaming request to the gateway"
@@ -65,6 +69,18 @@ eval-run-bad:
 
 eval-list:
 	docker compose exec refapp python -m app.eval.cli list
+
+eval-compare:
+	docker compose exec refapp python -m app.eval.cli compare --candidate $(CANDIDATE) --baseline $(BASELINE)
+
+eval-snapshot:
+	docker compose exec refapp python -m app.eval.cli snapshot --run $(RUN) --out /app/eval/baseline.json
+
+eval-gate:
+	docker compose exec refapp python -m app.eval.cli gate --prompt-version v1 --baseline-file /app/eval/baseline.json
+
+eval-gate-bad:
+	docker compose exec refapp python -m app.eval.cli gate --prompt-version v2-nocontext --baseline-file /app/eval/baseline.json
 
 stats:
 	@curl -s localhost:8000/api/corpus/stats | (python3 -m json.tool 2>/dev/null || cat)
